@@ -10,19 +10,60 @@ WiFiClient espClient;
 
 PubSubClient mqtt_client(espClient);
 
-SoftwareSerial p1_serial(P1_SERIAL_RX, -1, true);
+void setup()
+{
+  Serial.begin(BAUD_RATE);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    //Serial.print(".");
+  }
+
+  setup_ota();
+
+  mqtt_client.setServer(MQTT_HOST, atoi(MQTT_PORT));
+}
+
+void loop()
+{
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+    }
+  }
+
+  ArduinoOTA.handle();
+
+  if (!mqtt_client.connected())
+  {
+    long now = millis();
+
+    if (now - LAST_RECONNECT_ATTEMPT > 5000)
+    {
+      LAST_RECONNECT_ATTEMPT = now;
+
+      if (mqtt_reconnect())
+      {
+        LAST_RECONNECT_ATTEMPT = 0;
+      }
+    }
+  }
+  else
+  {
+    mqtt_client.loop();
+  }
+
+  read_p1_serial();
+}
+
 
 void send_mqtt_message(const char *topic, char *payload)
 {
-  Serial.printf("MQTT Outgoing on %s: ", topic);
-  Serial.println(payload);
-
   bool result = mqtt_client.publish(topic, payload, false);
-
-  if (!result)
-  {
-    Serial.printf("MQTT publish to topic %s failed\n", topic);
-  }
 }
 
 bool mqtt_reconnect()
@@ -32,25 +73,21 @@ bool mqtt_reconnect()
   while (!mqtt_client.connected() && MQTT_RECONNECT_RETRIES < MQTT_MAX_RECONNECT_TRIES)
   {
     MQTT_RECONNECT_RETRIES++;
-    Serial.printf("MQTT connection attempt %d / %d ...\n", MQTT_RECONNECT_RETRIES, MQTT_MAX_RECONNECT_TRIES);
-
     if (mqtt_client.connect(HOSTNAME, MQTT_USER, MQTT_PASS))
     {
-      Serial.println(F("MQTT connected!"));
-
       char *message = new char[16 + strlen(HOSTNAME) + 1];
       strcpy(message, "p1 meter alive: ");
       strcat(message, HOSTNAME);
       mqtt_client.publish("hass/status", message);
 
-      Serial.printf("MQTT root topic: %s\n", MQTT_ROOT_TOPIC);
+      // Serial.printf("MQTT root topic: %s\n", MQTT_ROOT_TOPIC);
     }
     else
     {
-      Serial.print(F("MQTT Connection failed: rc="));
-      Serial.println(mqtt_client.state());
-      Serial.println(F(" Retrying in 5 seconds"));
-      Serial.println("");
+//      Serial.print(F("MQTT Connection failed: rc="));
+//      Serial.println(mqtt_client.state());
+//      Serial.println(F(" Retrying in 5 seconds"));
+//      Serial.println("");
 
       delay(5000);
     }
@@ -58,7 +95,7 @@ bool mqtt_reconnect()
 
   if (MQTT_RECONNECT_RETRIES >= MQTT_MAX_RECONNECT_TRIES)
   {
-    Serial.printf("*** MQTT connection failed, giving up after %d tries ...\n", MQTT_RECONNECT_RETRIES);
+    // Serial.printf("*** MQTT connection failed, giving up after %d tries ...\n", MQTT_RECONNECT_RETRIES);
     return false;
   }
 
@@ -68,10 +105,10 @@ bool mqtt_reconnect()
 void send_metric(String name, long metric)
 {
   if (metric > 0) {
-    Serial.print(F("Sending metric to broker: "));
-    Serial.print(name);
-    Serial.print(F("="));
-    Serial.println(metric);
+//    Serial.print(F("Sending metric to broker: "));
+//    Serial.print(name);
+//    Serial.print(F("="));
+//    Serial.println(metric);
 
     char output[10];
     ltoa(metric, output, sizeof(output));
@@ -167,9 +204,11 @@ bool decode_telegram(int len)
   int endChar = FindCharInArrayRev(telegram, '!', len);
   bool validCRCFound = false;
 
+  /*
   for (int cnt = 0; cnt < len; cnt++)
     Serial.print(telegram[cnt]);
-
+  */
+  
   if (startChar >= 0)
   {
     currentCRC = CRC16(0x0000, (unsigned char *) telegram + startChar, len - startChar);
@@ -184,10 +223,10 @@ bool decode_telegram(int len)
     messageCRC[4] = 0;
     validCRCFound = (strtol(messageCRC, NULL, 16) == currentCRC);
 
-    if (validCRCFound)
-      Serial.println(F("CRC Valid!"));
-    else
-      Serial.println(F("CRC Invalid!"));
+//    if (validCRCFound)
+//      Serial.println(F("CRC Valid!"));
+//    else
+//      Serial.println(F("CRC Invalid!"));
 
     currentCRC = 0;
   }
@@ -256,14 +295,14 @@ bool decode_telegram(int len)
 
 void read_p1_serial()
 {
-  if (p1_serial.available())
+  if (Serial.available())
   {
     memset(telegram, 0, sizeof(telegram));
 
-    while (p1_serial.available())
+    while (Serial.available())
     {
       ESP.wdtDisable();
-      int len = p1_serial.readBytesUntil('\n', telegram, P1_MAXLINELENGTH);
+      int len = Serial.readBytesUntil('\n', telegram, P1_MAXLINELENGTH);
       ESP.wdtEnable(1);
 
       telegram[len] = '\n';
@@ -279,7 +318,7 @@ void read_p1_serial()
 
 void setup_ota()
 {
-  Serial.println(F("Arduino OTA activated."));
+  //Serial.println(F("Arduino OTA activated."));
 
   ArduinoOTA.setPort(8266);
 
@@ -288,90 +327,35 @@ void setup_ota()
 
   ArduinoOTA.onStart([]()
   {
-    Serial.println(F("Arduino OTA: Start"));
+//    Serial.println(F("Arduino OTA: Start"));
   });
 
   ArduinoOTA.onEnd([]()
   {
-    Serial.println(F("Arduino OTA: End (Running reboot)"));
+//    Serial.println(F("Arduino OTA: End (Running reboot)"));
   });
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
   {
-    Serial.printf("Arduino OTA Progress: %u%%\r", (progress / (total / 100)));
+//    Serial.printf("Arduino OTA Progress: %u%%\r", (progress / (total / 100)));
   });
 
-  ArduinoOTA.onError([](ota_error_t error)
-  {
-    Serial.printf("Arduino OTA Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR)
-      Serial.println(F("Arduino OTA: Auth Failed"));
-    else if (error == OTA_BEGIN_ERROR)
-      Serial.println(F("Arduino OTA: Begin Failed"));
-    else if (error == OTA_CONNECT_ERROR)
-      Serial.println(F("Arduino OTA: Connect Failed"));
-    else if (error == OTA_RECEIVE_ERROR)
-      Serial.println(F("Arduino OTA: Receive Failed"));
-    else if (error == OTA_END_ERROR)
-      Serial.println(F("Arduino OTA: End Failed"));
-  });
+//  ArduinoOTA.onError([](ota_error_t error)
+//  {
+//    
+//    Serial.printf("Arduino OTA Error[%u]: ", error);
+//    if (error == OTA_AUTH_ERROR)
+//      Serial.println(F("Arduino OTA: Auth Failed"));
+//    else if (error == OTA_BEGIN_ERROR)
+//      Serial.println(F("Arduino OTA: Begin Failed"));
+//    else if (error == OTA_CONNECT_ERROR)
+//      Serial.println(F("Arduino OTA: Connect Failed"));
+//    else if (error == OTA_RECEIVE_ERROR)
+//      Serial.println(F("Arduino OTA: Receive Failed"));
+//    else if (error == OTA_END_ERROR)
+//      Serial.println(F("Arduino OTA: End Failed"));
+//  });
 
   ArduinoOTA.begin();
-  Serial.println(F("Arduino OTA finished"));
-}
-
-void setup()
-{
-  Serial.begin(BAUD_RATE);
-  p1_serial.begin(BAUD_RATE);
-
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("Connected to WIFI...");
-
-  setup_ota();
-
-  Serial.printf("MQTT connecting to: %s:%s\n", MQTT_HOST, MQTT_PORT);
-  mqtt_client.setServer(MQTT_HOST, atoi(MQTT_PORT));
-}
-
-void loop()
-{
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Disconnected WIFI... Reconnect");
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print("-");
-    }
-  }
-
-  ArduinoOTA.handle();
-
-  if (!mqtt_client.connected())
-  {
-    long now = millis();
-
-    if (now - LAST_RECONNECT_ATTEMPT > 5000)
-    {
-      LAST_RECONNECT_ATTEMPT = now;
-
-      if (mqtt_reconnect())
-      {
-        LAST_RECONNECT_ATTEMPT = 0;
-      }
-    }
-  }
-  else
-  {
-    mqtt_client.loop();
-  }
-
-  read_p1_serial();
+//  Serial.println(F("Arduino OTA finished"));
 }
