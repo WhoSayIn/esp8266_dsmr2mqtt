@@ -1,1 +1,3 @@
 .DS_Store
+.pio
+src/settings.h
